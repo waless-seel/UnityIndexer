@@ -33,7 +33,7 @@ UnityIndexer/
 ## 開発ガイドライン
 
 ### コーディング規約
-- 言語: C# (.NET 8)
+- 言語: C# (.NET 10)
 - Unity が生成する `.sln` / `.slnx` / `.csproj` を `MSBuildWorkspace` で読み込む
   - クロスアセンブリ型解決・Unity アセンブリ参照が自動解決される
 - XML ドキュメントコメント（`///`）をパブリック API に付与する
