@@ -10,6 +10,9 @@ UnityIndexer は Unity プロジェクトのコードベース・アセット・
 - 人間向けインターフェイス（CLI、Web UI）の提供
 - AI 向けインターフェイス（MCP サーバー、構造化出力）の提供
 
+**インターフェイス優先順位:**
+CLI で解決できる課題は CLI を優先する。MCP は CLI では対応しにくい対話的・コンテキスト依存のユースケースに限定する。
+
 ## リポジトリ構成（予定）
 
 ```
@@ -57,18 +60,21 @@ UnityIndexer/
 - .meta ファイルによる GUID マッピング
 - アセット間の参照関係（どのプレハブがどのスクリプトを使うか等）
 
-### AI インターフェイス設計方針
-- MCP (Model Context Protocol) サーバーとして実装
-- ツール例:
-  - `search_assets` - アセット検索
-  - `get_script_info` - スクリプト詳細取得
-  - `find_references` - 参照元・参照先の探索
-  - `get_scene_hierarchy` - シーン階層取得
-  - `summarize_project` - プロジェクト概要生成
+### インターフェイス設計方針
 
-### 人間向けインターフェイス設計方針
-- CLI: `unity-indexer index <path>` / `unity-indexer search <query>`
-- 出力形式: JSON、テーブル、ツリー表示
+**優先順位: CLI > MCP**
+
+CLIで解決できる場合はCLIを選ぶ。MCPはCLIでは難しい用途（会話コンテキストを跨いだ参照、LLMによる自律的な探索）に留める。
+
+#### CLI（最優先）
+- `unity-indexer index <path>` / `unity-indexer search <query>`
+- 出力形式: JSON（`--json`）、テーブル、ツリー表示
+- AI（Claude等）は `subprocess` や `claude -p` 経由で CLI を呼び出せるため、CLIが充実していればMCP不要なケースが多い
+
+#### MCP（CLIで対応できない場合のみ）
+- 会話コンテキストを保持しながら複数回参照するケース
+- LLM が自律的にプロジェクトを探索するエージェントユースケース
+- MCP を実装する際も内部では CLI コマンドと同じロジックを再利用する
 
 ## 開発時の注意
 
