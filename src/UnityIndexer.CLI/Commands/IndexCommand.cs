@@ -52,6 +52,7 @@ internal static class IndexCommand
             db.UpsertAssets(index.Assets.Values);
             db.UpsertReferences(index.References);
             db.UpsertComponents(index.Components);
+            db.UpsertAssemblies(index.Assemblies.Values);
 
             sw.Stop();
             Console.WriteLine($"完了 ({sw.Elapsed.TotalSeconds:F1}s): {dbPath}");

@@ -388,37 +388,37 @@ GUID または相対パスでアセットの詳細情報と参照件数を表示
 | テストクラス | テスト数 | 内容 |
 |---|---|---|
 | `MetaFileParserTests` | 3 | 正常解析 / アセットファイル不在 / GUID なし |
-| `YamlAssetParserTests` | 2 | スクリプト参照検出 / 空ファイル |
+| `YamlAssetParserTests` | 3 | スクリプト参照検出 / **fileID による GameObject 名解決** / 空ファイル |
 | `IndexDatabaseTests` | 3 | 検索 / 参照関係 / パス検索 |
 
 ---
 
 ## 既知の課題・見直しポイント
 
-### 優先度: 高
+### 解決済み ✓
+
+| # | 場所 | 内容 |
+|---|---|---|
+| 1 | `YamlAssetParser` | ~~`currentGameObjectName` のリセットタイミングが不正確~~ → fileID マップ方式に変更 |
+| 2 | `IndexDatabase` | ~~`UpsertAssemblies` が未実装~~ → 実装済み |
+| 3 | `IndexCommand` | ~~`db.UpsertAssemblies()` の呼び出しがない~~ → 追加済み |
+| 4 | `CLI` | ~~`scene` コマンドなし~~ → 追加済み (`SceneCommand`) |
+
+### 優先度: 中（残課題）
 
 | # | 場所 | 課題 |
 |---|---|---|
-| 1 | `YamlAssetParser` | `currentGameObjectName` のリセットタイミングが不正確。MonoBehaviour セクションに入るたびにリセットすべき |
-| 2 | `IndexDatabase` | `assemblies` テーブルへの書き込みが未実装 (`UpsertAssemblies` メソッドがない) |
-| 3 | `IndexCommand` | `db.UpsertAssemblies()` の呼び出しがない |
-
-### 優先度: 中
-
-| # | 場所 | 課題 |
-|---|---|---|
-| 4 | `YamlAssetParser` | 参照種別の判定がヒューリスティック。マテリアルの `m_Materials` と `m_Material` の競合など |
-| 5 | `IndexDatabase.UpsertComponents` | 全削除→再挿入方式。大規模プロジェクトでは非効率 |
-| 6 | `AssetAnalyzer` | 差分更新非対応。毎回フルスキャン |
-| 7 | `SearchCommand` | `--type` フィルタが FTS クエリと組み合わさる場合の SQL が別クエリになっており冗長 |
+| 5 | `YamlAssetParser` | 参照種別の判定がヒューリスティック。`m_Materials` と `m_Material` どちらも Material になるが競合の余地あり |
+| 6 | `IndexDatabase.UpsertComponents` | 全削除→再挿入方式。差分更新時に非効率 |
+| 7 | `AssetAnalyzer` | 差分更新非対応。毎回フルスキャン |
+| 8 | `SearchCommand` | `--type` フィルタと FTS クエリで別 SQL 文になっており冗長 |
 
 ### 優先度: 低（将来実装）
 
 | # | 課題 |
 |---|---|
-| 8 | `UnityIndexer.Analyzer/Code/` — Roslyn による C# 解析が未実装 |
-| 9 | `impact` コマンド — スクリプト変更時の影響アセット計算 |
-| 10 | `scene` コマンド — シーン内 GameObject 階層のツリー表示 |
+| 9  | `UnityIndexer.Analyzer/Code/` — Roslyn による C# 解析が未実装 |
+| 10 | `impact` コマンド — スクリプト変更時の影響アセット計算 |
 | 11 | `Spectre.Console` 活用 — 現状 `Console.WriteLine` 直接出力 |
 | 12 | MCP サーバー実装 |
 
@@ -427,9 +427,10 @@ GUID または相対パスでアセットの詳細情報と参照件数を表示
 ## 次セッションでの推奨アクション
 
 ```
-1. 課題 #1 修正: YamlAssetParser の GameObject 名追跡ロジック修正
-2. 課題 #2,3 修正: UpsertAssemblies 実装 + IndexCommand から呼び出し
-3. 機能追加: scene コマンド（シーン階層表示）
-4. 機能追加: impact コマンド（スクリプト変更影響範囲）
-5. Roslyn 解析: UnityIndexer.Analyzer/Code/ の実装開始
+1. Roslyn 解析: UnityIndexer.Analyzer/Code/ の実装開始
+     - SolutionLoader (MSBuildWorkspace で .sln 読み込み)
+     - TypeAnalyzer (SemanticModel から型情報抽出、MonoBehaviour 判定)
+     - ScriptTypes を DB に書き込む (IndexDatabase.UpsertScriptTypes)
+2. impact コマンド: スクリプト変更時の影響プレハブ/シーン一覧
+3. 差分更新: LastModified をチェックして変更ファイルのみ再解析
 ```

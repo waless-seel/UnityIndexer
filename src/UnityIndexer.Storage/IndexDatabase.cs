@@ -178,6 +178,37 @@ public sealed class IndexDatabase : IDisposable
         tx.Commit();
     }
 
+    public void UpsertAssemblies(IEnumerable<AssemblyDefinitionInfo> assemblies)
+    {
+        using var tx = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO assemblies (asset_guid, assembly_name, references_json, allow_unsafe, auto_referenced)
+            VALUES ($guid, $name, $refs, $unsafe, $auto)
+            ON CONFLICT(asset_guid) DO UPDATE SET
+                assembly_name=$name, references_json=$refs,
+                allow_unsafe=$unsafe, auto_referenced=$auto;
+            """;
+
+        var pGuid   = cmd.Parameters.Add("$guid",   SqliteType.Text);
+        var pName   = cmd.Parameters.Add("$name",   SqliteType.Text);
+        var pRefs   = cmd.Parameters.Add("$refs",   SqliteType.Text);
+        var pUnsafe = cmd.Parameters.Add("$unsafe", SqliteType.Integer);
+        var pAuto   = cmd.Parameters.Add("$auto",   SqliteType.Integer);
+
+        foreach (var a in assemblies)
+        {
+            pGuid.Value   = a.AssetGuid;
+            pName.Value   = a.AssemblyName;
+            pRefs.Value   = System.Text.Json.JsonSerializer.Serialize(a.References);
+            pUnsafe.Value = a.AllowUnsafeCode ? 1 : 0;
+            pAuto.Value   = a.AutoReferenced  ? 1 : 0;
+            cmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+    }
+
     public void UpsertComponents(IEnumerable<ComponentInfo> components)
     {
         using var tx = _connection.BeginTransaction();
@@ -290,6 +321,36 @@ public sealed class IndexDatabase : IDisposable
             : null;
     }
 
+    /// <summary>指定アセット (プレハブ/シーン) 内のコンポーネント一覧を返す</summary>
+    public IReadOnlyList<ComponentRow> GetComponents(string assetGuid)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT c.go_name, c.script_guid, c.builtin_class, c.enabled, c.hierarchy_path,
+                   a.path as script_path, a.name as script_name
+            FROM components c
+            LEFT JOIN assets a ON c.script_guid = a.guid
+            WHERE c.asset_guid = $guid
+            ORDER BY c.go_name
+            """;
+        cmd.Parameters.AddWithValue("$guid", assetGuid);
+
+        var results = new List<ComponentRow>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            results.Add(new ComponentRow(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.GetInt32(3) != 0,
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6)));
+        }
+        return results;
+    }
+
     public int CountAssets()
     {
         using var cmd = _connection.CreateCommand();
@@ -334,3 +395,13 @@ public sealed class IndexDatabase : IDisposable
 
 /// <summary>アセット検索結果の軽量 DTO</summary>
 public sealed record AssetSearchResult(string Guid, string Path, string Name, string Type);
+
+/// <summary>コンポーネント行の DTO</summary>
+public sealed record ComponentRow(
+    string GameObjectName,
+    string? ScriptGuid,
+    string? BuiltinClass,
+    bool Enabled,
+    string? HierarchyPath,
+    string? ScriptPath,
+    string? ScriptName);

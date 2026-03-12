@@ -7,5 +7,6 @@ root.AddCommand(IndexCommand.Create());
 root.AddCommand(SearchCommand.Create());
 root.AddCommand(RefsCommand.Create());
 root.AddCommand(InfoCommand.Create());
+root.AddCommand(SceneCommand.Create());
 
 return await root.InvokeAsync(args);

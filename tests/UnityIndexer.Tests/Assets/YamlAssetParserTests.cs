@@ -37,6 +37,40 @@ public class YamlAssetParserTests
         File.Delete(tmp);
     }
 
+    /// <summary>
+    /// MonoBehaviour と GameObject が別セクションにある場合でも
+    /// m_GameObject.fileID を使って正しく GameObject 名を解決できることを確認する。
+    /// </summary>
+    [Fact]
+    public void Parse_GameObjectNameResolvedByFileId()
+    {
+        var prefabContent = """
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!1 &111111
+            GameObject:
+              m_Name: Enemy
+            --- !u!1 &222222
+            GameObject:
+              m_Name: Player
+            --- !u!114 &333333
+            MonoBehaviour:
+              m_GameObject: {fileID: 222222}
+              m_Script: {fileID: 11500000, guid: eeee0000ffff1111aaaa2222bbbb3333, type: 3}
+            """;
+
+        var tmp = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.prefab");
+        File.WriteAllText(tmp, prefabContent);
+
+        var result = YamlAssetParser.Parse("prefab-guid-1111", tmp);
+
+        Assert.Single(result.Components);
+        // MonoBehaviour は Player (fileID: 222222) にアタッチされているはず
+        Assert.Equal("Player", result.Components[0].GameObjectName);
+
+        File.Delete(tmp);
+    }
+
     [Fact]
     public void Parse_EmptyFile_ReturnsNoComponents()
     {
