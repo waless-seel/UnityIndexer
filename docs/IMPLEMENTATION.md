@@ -424,13 +424,113 @@ GUID または相対パスでアセットの詳細情報と参照件数を表示
 
 ---
 
-## 次セッションでの推奨アクション
+## 次セッション以降の残課題
+
+### 優先度: 高
+
+#### A. Roslyn による C# コード解析（`UnityIndexer.Analyzer/Code/`）
+
+未実装。`ScriptTypes` テーブルは定義済みだが書き込みが行われていない。
 
 ```
-1. Roslyn 解析: UnityIndexer.Analyzer/Code/ の実装開始
-     - SolutionLoader (MSBuildWorkspace で .sln 読み込み)
-     - TypeAnalyzer (SemanticModel から型情報抽出、MonoBehaviour 判定)
-     - ScriptTypes を DB に書き込む (IndexDatabase.UpsertScriptTypes)
-2. impact コマンド: スクリプト変更時の影響プレハブ/シーン一覧
-3. 差分更新: LastModified をチェックして変更ファイルのみ再解析
+実装対象:
+  SolutionLoader.cs
+    - MSBuildWorkspace で Unity の .sln を読み込む
+    - 注意: Microsoft.Build をランタイムに登録する必要がある
+      (MSBuildLocator.RegisterDefaults() または dotnet-sdk のパス指定)
+
+  TypeAnalyzer.cs
+    - Compilation / SemanticModel から型一覧を抽出
+    - MonoBehaviour / ScriptableObject 判定（基底クラスチェーンを遡る）
+    - [SerializeField] フィールドの抽出
+    - IsEditorClass 判定（名前空間に UnityEditor が含まれるか）
+
+  IndexDatabase.UpsertScriptTypes(IEnumerable<ScriptTypeInfo>)
+    - script_types テーブルへの書き込み（現状未実装）
+
+  IndexCommand での呼び出し
+    - AssetAnalyzer.Analyze() の後に SolutionLoader → TypeAnalyzer を実行
+    - db.UpsertScriptTypes() を追加
 ```
+
+**注意点**:
+- MSBuildWorkspace は .NET 8 環境での動作に注意が必要（MSBuildLocator パッケージが必要）
+- Unity プロジェクトの .sln は Unity Editor が生成したもの。パスを引数で受け取るか、
+  `<project-root>/*.sln` を自動検出する
+
+---
+
+#### B. `impact` コマンド
+
+スクリプト変更時に影響を受けるプレハブ・シーンを一覧表示する。
+
+```
+unity-indexer impact <script-path-or-guid>   [--json]
+
+実装方針:
+  - db.FindReferencingAssets(scriptGuid) で直接参照元を取得
+  - さらに参照元のプレハブを参照しているシーンも再帰的に探索
+  - 出力: 影響アセット一覧（種別 / パス / 参照の深さ）
+
+実装場所:
+  src/UnityIndexer.CLI/Commands/ImpactCommand.cs
+  IndexDatabase.FindTransitiveReferencingAssets(guid, maxDepth) を追加
+```
+
+---
+
+### 優先度: 中
+
+#### C. 差分更新対応
+
+現状は `index` コマンドを実行するたびにプロジェクト全体を再スキャンする。
+
+```
+実装方針:
+  1. DB の assets.modified_at とファイルの LastWriteTimeUtc を比較
+  2. 変更・追加ファイルのみ再解析
+  3. 削除ファイルは DB から削除（孤立した参照のクリーンアップ）
+
+影響クラス:
+  AssetAnalyzer: フルスキャンと差分スキャンを切り替えるオプション追加
+  IndexCommand:  --incremental フラグを追加
+```
+
+#### D. `IndexDatabase.UpsertComponents` の効率化
+
+現状はアセット単位で全削除→再挿入。差分更新との組み合わせで非効率になる。
+
+```
+改善案:
+  - component の hash（go_name + script_guid の組み合わせ）で差分検出
+  - または変更アセットのみ削除→再挿入（アセット単位は現状でも可）
+```
+
+---
+
+### 優先度: 低
+
+#### E. 出力のリッチ化（`Spectre.Console`）
+
+パッケージは追加済み。現状は `Console.WriteLine` 直接出力。
+
+```
+候補:
+  - search / refs コマンドのテーブル表示を Spectre.Console.Table に変更
+  - scene コマンドの階層表示を Tree ウィジェットに変更
+  - index コマンドの進捗表示を ProgressBar に変更
+```
+
+#### F. MCP サーバー実装
+
+CLI コマンドと同じロジックを再利用する形で実装。
+CLI が充実した後に着手する。
+
+---
+
+## セッション記録
+
+| セッション | 実施内容 |
+|---|---|
+| Session 1 | ソリューション構成・Core モデル・Analyzer (アセット解析)・Storage・CLI 基本コマンド・テスト |
+| Session 2 | YamlAssetParser バグ修正・UpsertAssemblies 実装・scene コマンド・IMPLEMENTATION.md 作成 |
