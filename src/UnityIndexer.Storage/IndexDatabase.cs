@@ -84,6 +84,10 @@ public sealed class IndexDatabase : IDisposable
             );
             """);
 
+        // 既存 script_types テーブルへの列追加マイグレーション（列が既に存在する場合は無視）
+        TryExecuteNonQuery("ALTER TABLE script_types ADD COLUMN interfaces TEXT;");
+        TryExecuteNonQuery("ALTER TABLE script_types ADD COLUMN serialized_fields TEXT;");
+
         // FTS5 全文検索テーブル
         ExecuteNonQuery("""
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_assets
@@ -203,6 +207,50 @@ public sealed class IndexDatabase : IDisposable
             pRefs.Value   = System.Text.Json.JsonSerializer.Serialize(a.References);
             pUnsafe.Value = a.AllowUnsafeCode ? 1 : 0;
             pAuto.Value   = a.AutoReferenced  ? 1 : 0;
+            cmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+    }
+
+    public void UpsertScriptTypes(IEnumerable<ScriptTypeInfo> types)
+    {
+        using var tx = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO script_types
+                (asset_guid, namespace, class_name, base_type, kind,
+                 is_mono, is_so, is_editor, interfaces, serialized_fields)
+            VALUES ($guid, $ns, $cls, $base, $kind, $mono, $so, $ed, $ifaces, $fields)
+            ON CONFLICT(asset_guid) DO UPDATE SET
+                namespace=$ns, class_name=$cls, base_type=$base, kind=$kind,
+                is_mono=$mono, is_so=$so, is_editor=$ed,
+                interfaces=$ifaces, serialized_fields=$fields;
+            """;
+
+        var pGuid   = cmd.Parameters.Add("$guid",   SqliteType.Text);
+        var pNs     = cmd.Parameters.Add("$ns",     SqliteType.Text);
+        var pCls    = cmd.Parameters.Add("$cls",    SqliteType.Text);
+        var pBase   = cmd.Parameters.Add("$base",   SqliteType.Text);
+        var pKind   = cmd.Parameters.Add("$kind",   SqliteType.Text);
+        var pMono   = cmd.Parameters.Add("$mono",   SqliteType.Integer);
+        var pSo     = cmd.Parameters.Add("$so",     SqliteType.Integer);
+        var pEd     = cmd.Parameters.Add("$ed",     SqliteType.Integer);
+        var pIfaces = cmd.Parameters.Add("$ifaces", SqliteType.Text);
+        var pFields = cmd.Parameters.Add("$fields", SqliteType.Text);
+
+        foreach (var t in types)
+        {
+            pGuid.Value   = t.AssetGuid;
+            pNs.Value     = (object?)t.Namespace ?? DBNull.Value;
+            pCls.Value    = t.ClassName;
+            pBase.Value   = (object?)t.BaseTypeName ?? DBNull.Value;
+            pKind.Value   = t.Kind.ToString();
+            pMono.Value   = t.IsMonoBehaviour   ? 1 : 0;
+            pSo.Value     = t.IsScriptableObject ? 1 : 0;
+            pEd.Value     = t.IsEditorClass      ? 1 : 0;
+            pIfaces.Value = System.Text.Json.JsonSerializer.Serialize(t.Interfaces);
+            pFields.Value = System.Text.Json.JsonSerializer.Serialize(t.SerializedFields);
             cmd.ExecuteNonQuery();
         }
 
@@ -358,6 +406,25 @@ public sealed class IndexDatabase : IDisposable
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
+    public int CountScriptTypes()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM script_types";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    /// <summary>GUID でスクリプト型情報を検索する</summary>
+    public (string ClassName, bool IsMono, bool IsSo, string? Namespace)? GetScriptType(string guid)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT class_name, is_mono, is_so, namespace FROM script_types WHERE asset_guid=$guid";
+        cmd.Parameters.AddWithValue("$guid", guid);
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read()) return null;
+        return (reader.GetString(0), reader.GetInt32(1) != 0, reader.GetInt32(2) != 0,
+                reader.IsDBNull(3) ? null : reader.GetString(3));
+    }
+
     // -------------------------------------------------------
     // ヘルパー
     // -------------------------------------------------------
@@ -388,6 +455,13 @@ public sealed class IndexDatabase : IDisposable
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>SQL を実行し、例外は無視する（ALTER TABLE IF NOT EXISTS の代替）</summary>
+    private void TryExecuteNonQuery(string sql)
+    {
+        try { ExecuteNonQuery(sql); }
+        catch { /* 列が既に存在する場合など、エラーは無視 */ }
     }
 
     public void Dispose() => _connection.Dispose();

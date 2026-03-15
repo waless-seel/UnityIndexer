@@ -62,6 +62,59 @@ public class IndexDatabaseTests : IDisposable
         Assert.Equal("path-test-guid", result!.Guid);
     }
 
+    [Fact]
+    public void UpsertScriptTypes_StoresAndRetrievesCorrectly()
+    {
+        // Arrange: まずアセットを登録（FK なしだが念のため）
+        var guid = "script-type-test-guid";
+        _db.UpsertAssets([
+            new AssetInfo
+            {
+                Guid = guid,
+                RelativePath = "Assets/Scripts/EnemyAI.cs",
+                Type = AssetType.Script,
+                FileSizeBytes = 512,
+                LastModified = DateTime.UtcNow,
+                IndexedAt = DateTime.UtcNow,
+            }
+        ]);
+
+        var scriptType = new ScriptTypeInfo
+        {
+            AssetGuid = guid,
+            Namespace = "MyGame.Enemy",
+            ClassName = "EnemyAI",
+            BaseTypeName = "UnityEngine.MonoBehaviour",
+            Interfaces = ["IEnemy", "IDamageable"],
+            Kind = TypeKind.Class,
+            IsMonoBehaviour = true,
+            IsScriptableObject = false,
+            IsEditorClass = false,
+            SerializedFields =
+            [
+                new FieldInfo { Name = "Speed", TypeName = "float", IsPublic = true, HasSerializeFieldAttribute = false },
+                new FieldInfo { Name = "_health", TypeName = "int", IsPublic = false, HasSerializeFieldAttribute = true },
+            ],
+        };
+
+        // Act
+        _db.UpsertScriptTypes([scriptType]);
+
+        // Assert: script_types テーブルに 1 件格納されていること
+        Assert.Equal(1, _db.CountScriptTypes());
+
+        var row = _db.GetScriptType(guid);
+        Assert.NotNull(row);
+        Assert.Equal("EnemyAI", row!.Value.ClassName);
+        Assert.True(row.Value.IsMono);
+        Assert.False(row.Value.IsSo);
+        Assert.Equal("MyGame.Enemy", row.Value.Namespace);
+
+        // ON CONFLICT UPDATE が正しく動作すること（重複エラーにならない）
+        _db.UpsertScriptTypes([scriptType]);
+        Assert.Equal(1, _db.CountScriptTypes());
+    }
+
     public void Dispose()
     {
         _db.Dispose();
