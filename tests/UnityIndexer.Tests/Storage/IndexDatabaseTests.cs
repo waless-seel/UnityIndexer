@@ -195,7 +195,7 @@ public class IndexDatabaseTests : IDisposable
         Assert.Single(components);
         Assert.Equal("script-comp-guid", components[0].ScriptGuid);
         Assert.Equal("Assets/Scripts/PlayerController.cs", components[0].ScriptPath);
-        Assert.Equal("PlayerController.cs", components[0].ScriptName);
+        Assert.Equal("PlayerController", components[0].ScriptName);
     }
 
     // -------------------------------------------------------

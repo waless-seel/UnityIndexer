@@ -464,7 +464,11 @@ public sealed class IndexDatabase : IDisposable
         catch { /* 列が既に存在する場合など、エラーは無視 */ }
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        _connection.Dispose();
+        SqliteConnection.ClearAllPools();
+    }
 }
 
 /// <summary>アセット検索結果の軽量 DTO</summary>
