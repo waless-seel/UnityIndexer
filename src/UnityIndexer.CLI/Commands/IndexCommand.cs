@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Diagnostics;
 using UnityIndexer.Analyzer.Assets;
+using UnityIndexer.Analyzer.Code;
 using UnityIndexer.Storage;
 
 namespace UnityIndexer.CLI.Commands;
@@ -18,7 +19,7 @@ internal static class IndexCommand
             pathArg, forceOpt, verboseOpt,
         };
 
-        cmd.SetHandler((string path, bool force, bool verbose) =>
+        cmd.SetHandler(async (string path, bool force, bool verbose) =>
         {
             var projectRoot = Path.GetFullPath(path);
             if (!Directory.Exists(projectRoot))
@@ -53,6 +54,17 @@ internal static class IndexCommand
             db.UpsertReferences(index.References);
             db.UpsertComponents(index.Components);
             db.UpsertAssemblies(index.Assemblies.Values);
+
+            // Roslyn C# コード解析（.sln が存在する場合のみ）
+            var solution = await SolutionLoader.LoadAsync(projectRoot, progress);
+            if (solution is not null)
+            {
+                Console.WriteLine("C# コード解析中...");
+                var scriptTypes = await TypeAnalyzer.AnalyzeAsync(
+                    solution, index.PathToGuid, projectRoot, progress);
+                db.UpsertScriptTypes(scriptTypes);
+                Console.WriteLine($"C# 型解析: {scriptTypes.Count} 型");
+            }
 
             sw.Stop();
             Console.WriteLine($"完了 ({sw.Elapsed.TotalSeconds:F1}s): {dbPath}");
